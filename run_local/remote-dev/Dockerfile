@@ -23,14 +23,14 @@ RUN apt-get install libturbojpeg
 #ADD "https://www.random.org/cgi-bin/randbyte?nbytes=10&format=h" skipcache
 
 RUN git clone https://github.com/eduardodut/TransT.git
-RUN pip install -r /trans-t/requirements.txt
+RUN pip install -r /TransT/requirements.txt
 
 RUN pip install supervisely==6.1.95
 
-RUN mkdir /trans-t/data/model/
-RUN cd /trans-t/data/model/ && wget --no-check-certificate 'https://drive.google.com/uc?id=1uxnvaKdTtYj-IgmrYwi2hCD5ZddTK2d8&export=download' -O transt.pth
+RUN mkdir /TransT/data/model/
+RUN cd /TransT/data/model/ && wget --no-check-certificate 'https://drive.google.com/uc?id=1uxnvaKdTtYj-IgmrYwi2hCD5ZddTK2d8&export=download' -O transt.pth
 
-RUN mv /trans-t/ /root/trans-t/
+RUN mv /TransT/ /root/TransT/
 
 
 #RUN conda install matplotlib pandas tqdm

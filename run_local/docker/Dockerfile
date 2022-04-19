@@ -39,18 +39,18 @@ RUN apt-get update
 RUN pip install torch==1.7.0+cu110 torchvision==0.8.1+cu110 torchaudio==0.7.0 -f https://download.pytorch.org/whl/torch_stable.html
 
 
-# Install trans-t packages
+# Install TransT packages
 
 
 RUN apt-get install libturbojpeg
 
 
 RUN git clone https://github.com/eduardodut/TransT.git
-RUN pip install -r /trans-t/requirements.txt
+RUN pip install -r /TransT/requirements.txt
 
 
-RUN mkdir /trans-t/data/model/
-RUN cd /trans-t/data/model/ && wget --no-check-certificate 'https://drive.google.com/uc?id=1uxnvaKdTtYj-IgmrYwi2hCD5ZddTK2d8&export=download' -O transt.pth
+RUN mkdir /TransT/data/model/
+RUN cd /TransT/data/model/ && wget --no-check-certificate 'https://drive.google.com/uc?id=1uxnvaKdTtYj-IgmrYwi2hCD5ZddTK2d8&export=download' -O transt.pth
 
-RUN mv /trans-t/ /root/trans-t/
+RUN mv /TransT/ /root/TransT/
 
