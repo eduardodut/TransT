@@ -47,11 +47,12 @@ RUN apt-get install libturbojpeg
 
 RUN git clone https://github.com/eduardodut/TransT.git 
 
-# RUN pip install -r /TransT/requirements.txt
 
-# RUN mkdir /TransT/data/
-# RUN mkdir /TransT/data/model/
-# RUN cd /TransT/data/model/ && wget --no-check-certificate 'https://drive.google.com/uc?id=1uxnvaKdTtYj-IgmrYwi2hCD5ZddTK2d8&export=download' -O transt.pth
 
-# RUN mv /TransT/ /root/TransT/
+RUN mkdir /TransT/data/
+RUN mkdir /TransT/data/model/
+RUN cd /TransT/data/model/ && wget --no-check-certificate 'https://drive.google.com/uc?id=1uxnvaKdTtYj-IgmrYwi2hCD5ZddTK2d8&export=download' -O transt.pth
 
+RUN mv /TransT/ /root/TransT/
+
+RUN pip install -r /root/TransT/requirements.txt
