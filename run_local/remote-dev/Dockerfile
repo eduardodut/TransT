@@ -22,7 +22,7 @@ RUN apt-get install libturbojpeg
 
 #ADD "https://www.random.org/cgi-bin/randbyte?nbytes=10&format=h" skipcache
 
-RUN git clone https://github.com/eduardodut/TransT.git
+RUN git clone https://github.com/eduardodut/TransT.git /
 RUN pip install -r /TransT/requirements.txt
 
 RUN pip install supervisely==6.1.95
