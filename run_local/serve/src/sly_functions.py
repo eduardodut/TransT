@@ -22,7 +22,7 @@ def _conver_bbox_from_sly_to_opencv(bbox):
 
 
 def init_tracker(img, bbox):
-    net_path = '/root/trans-t/data/model/transt.pth'  # Absolute path of the model
+    net_path = '/root/TransTt/data/model/transt.pth'  # Absolute path of the model
 
     # create model
     net = NetWithBackbone(net_path=net_path, use_gpu=True)
