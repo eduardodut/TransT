@@ -12,6 +12,7 @@ import cv2
 import os
 import multiprocessing as mp
 import json
+from glob import glob
 def _track_sequences(sequence,net,ds):
     
     x1,y1,x2,y2 = sequence[2]
@@ -130,7 +131,13 @@ def track_dataset(ds, dataset,model_pth,output_path,annotation_label,min_confide
             out_file.append([ann_path,x1,y1,x2,y2])
             print
         out_file = pd.DataFrame(out_file, columns=['ann_path','x_min','y_min','x_max','y_max'])
+        # seq_label,img_name,confidence,class
+        out_file['seq_label'] = out_file['ann_path'].apply(lambda x: x.split(os.sep)[-3])
+        out_file['img_name']  = out_file['ann_path'].apply(lambda x: x.split(os.sep)[-1].replace(".json",""))
+        out_file['class'] = 'person'
+        out_file['confidence'] = 1
         out_file[['x_min','y_min','x_max','y_max']] = out_file[['x_min','y_min','x_max','y_max']].astype(float).round(2)
+        out_file = out_file[['seq_label','img_name','confidence','class','x_min','y_min','x_max','y_max']]
         out_file.to_csv(output_path,index=False)
         torch.cuda.empty_cache()
 def main(dataset_path, model_pth,annotation_label,output_path,min_confidence):
@@ -145,12 +152,18 @@ def main(dataset_path, model_pth,annotation_label,output_path,min_confidence):
         ds = image_project.filter_by_seq(seq_label).samples
         _output_path = os.path.join(output_path,f"{seq_label}.csv")
         if not os.path.isfile(_output_path):
-            args.append([ds, dataset,model_pth,_output_path,annotation_label,min_confidence])
-            # track_dataset(ds, dataset,model_pth,_output_path,annotation_label,min_confidence)
+            arg = [ds, dataset,model_pth,_output_path,annotation_label,min_confidence]
+            args.append(arg)
+            # track_dataset(*arg)
     pool = mp.Pool(2)
     pool.starmap(track_dataset,args)
     pool.close()
     pool.join()
+    
+    arquivos = sorted(glob(output_path+"/*.csv"))
+    
+    out = pd.concat([pd.read_csv(arquivo) for arquivo in arquivos], ignore_index=True)
+    out.to_csv(output_path+".csv",index=False)
     print
        
     
