@@ -164,12 +164,7 @@ def main(dataset_path, model_pth,annotation_label,output_path,min_confidence):
     
     out = pd.concat([pd.read_csv(arquivo) for arquivo in arquivos], ignore_index=True)
     out.to_csv(output_path+".csv",index=False)
-    print
-       
     
-
-
-
 if __name__ == "__main__":
     # image_dataset_path = "/run/media/eduardo/SSD/Unifall/dataset/T-set/projects/Tset_images"
     image_dataset_path = "/run/media/eduardo/SSD/Unifall/dataset/LaSOT/lasot_person"
