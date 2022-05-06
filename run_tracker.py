@@ -13,163 +13,102 @@ import os
 import multiprocessing as mp
 import json
 from glob import glob
-def _track_sequences(sequence,net,ds):
-    
-    x1,y1,x2,y2 = sequence[2]
+
+def init_tracker(bbox,frame,tracker):
+    x1,y1,x2,y2 = bbox['x_min'], bbox['y_min'], bbox['x_max'], bbox['y_max']
     cx, cy, w, h = get_axis_aligned_bbox(np.array([x1,y1,x2-x1,y2-y1]))
     gt_bbox_ = [cx - w / 2, cy - h / 2, w, h]
-
     init_info = {'init_bbox': gt_bbox_}
-    tracker = Tracker(name='transt', net=net, window_penalty=0.49, exemplar_size=128, instance_size=256)
-    init_frame = sequence[3]
-    final_frame = sequence[4]
-    is_reversed = sequence[4] < sequence[3]
-    if is_reversed:
-        frame_range = list(reversed(range(final_frame,init_frame+1)))
-    else:
-        frame_range = list(range(init_frame,final_frame+1))
-    img_list = [cv2.cvtColor(cv2.imread(frame), cv2.COLOR_RGB2BGR) for frame in ds.iloc[frame_range]['img']]
-    tracker.initialize(img_list[0], init_info)
-    bbox_list = [sequence[2].tolist()]
-    for img in img_list[1:]:
-        outputs = tracker.track(img)
-        x1,y1,x2,y2 = outputs['target_bbox']
-        x2 = x1+x2
-        y2 = y1+y2
-        bbox_list.append([x1,y1,x2,y2])
-    if is_reversed:
-        bbox_list = list(reversed(bbox_list))[:-1]
-        
-        init_frame = final_frame
-    # sequence_bbox_list += bbox_list
-    return init_frame, bbox_list
-    print
-
-def filter_annotation_label(ann_list,annotation_label,min_confidence):
-    if len(ann_list) == 0:
-        return []
-    new_dicts = []
-    for k, ann in enumerate(ann_list):
-        new_dict = {}
-        new_dict['index'] = k
-        for tag in ann['tags']:
-            new_dict[tag['name']] = tag['value']
-           
-        new_dicts.append(new_dict)
-    confidence = min_confidence
-    index = -1
-    has_confidence = False
-    if len(new_dicts) > 0:
-        for new_dict in new_dicts:
-            if (index > -1) and (not has_confidence):
-                break
-            if new_dict['source'] == annotation_label:
-                if 'confidence' in new_dict.keys():
-                    has_confidence = True
-                if has_confidence and (new_dict['confidence'] >= confidence):
-                    index = new_dict['index']
-                    confidence = new_dict['confidence']
-                else:
-                    index = new_dict['index']
-                   
-    if index > -1:
-        return np.array(ann_list[index]['points']['exterior']).reshape(-1)
-    else:
-        return []
+    tracker.initialize(frame, init_info)
     
-def track_sequence(model_pth,ds,annotation_label,min_confidence):
-        out = {}
-        out['init_frame'] = []
-        out['bbox_list']  = []
-        net = NetWithBackbone(net_path=model_pth, use_gpu=True)
-        total_frames = ds.shape[0]
-        ds.sort_values('img',inplace=True,ascending=True)
-        ds.reset_index(drop=True, inplace=True)
-        ds['bbox'] = ds['ann'].apply(lambda x: x['objects'])
-        
-        ds['bbox'] = ds['bbox'].apply(lambda x: filter_annotation_label(x,annotation_label,min_confidence ))
-        ds['init_frame'] = ds.index
-        ds = ds[['seq_label','img','bbox','init_frame']]
-        
-        
-        forward_sequences = ds.loc[ds.bbox.apply(lambda x: len(x)>0)]
-        forward_sequences['final_frame'] = forward_sequences['init_frame'].shift(-1).fillna(total_frames).astype(int) -1 
+def _track_sequence(sequence,model_pth):
+    
+    net = NetWithBackbone(net_path=model_pth, use_gpu=True)
+    tracker = Tracker(name='transt', net=net, window_penalty=0.49, exemplar_size=128, instance_size=256)
+    output = []
+    classe = ''
+    for linha in sequence.to_dict(orient="records"):
+        img = cv2.cvtColor(cv2.imread(linha['img_path']), cv2.COLOR_RGB2BGR)
+        if not np.isnan(linha['confidence']):
+            classe = linha['class']
+            init_tracker(linha,img,tracker)
+            output.append(linha)
+        else:            
+            outputs = tracker.track(img)
+            x1,y1,x2,y2 = outputs['target_bbox']
+            x2 = x1+x2
+            y2 = y1+y2
+            _out = linha.copy()
+            _out['confidence'] = outputs['best_score'].max()
+            _out['class'] = classe
+            _out['x_min'], _out['y_min'], _out['x_max'], _out['y_max'] = x1,y1,x2,y2
+            output.append(_out)
+    return pd.DataFrame(output)   
 
-        sequences = forward_sequences
-        
-        backward_sequence = ds.loc[ds.bbox.apply(lambda x: len(x)>0)]
-        backward_sequence['final_frame'] = backward_sequence['init_frame'].shift(1).fillna(-1).astype(int) + 1
-        if backward_sequence.shape[0]>0:
-            backward_sequence = backward_sequence.iloc[[0]]
-            b_init_frame = int(backward_sequence.init_frame.values)
-            b_final_frame = int(backward_sequence.final_frame.values)
-            if b_init_frame != b_final_frame:
-                sequences = pd.concat([backward_sequence,sequences],ignore_index=True)
-        # backward_init_frame, backward_bbox_list = _track_sequences(backward_sequences,net,ds)
-        if sequences.shape[0] > 0:
-            _out = sequences.apply(lambda x: _track_sequences(x,net,ds),axis=1)
-            # _out = list(_out.apply(pd.DataFrame))
-            # forward_init_frame, forward_bbox_list   = _track_sequences(forward_sequences,net,ds)
-            # backward_init_frame, backward_bbox_list   = _track_sequences(backward_sequence,net,ds)
-            for o in _out:
-                out['init_frame'].append(o[0])
-                out['bbox_list']+= o[1]
-            # out['backward_init_frame'] = backward_init_frame 
-            # out['backward_bbox_list'] = backward_bbox_list 
-            print
-        return out
-def track_dataset(ds, dataset,model_pth,output_path,annotation_label,min_confidence):
+def add_back_sequence(sequence):
+    sequence.sort_values('img_name',inplace=True)
+    sequence['forward_sequence'] = sequence['confidence']
+    sequence['forward_sequence'].fillna(method='ffill',inplace=True)
+    forward_sequences  = sequence.loc[~sequence['forward_sequence'].isna()]
+    backward_sequences = sequence.loc[sequence['forward_sequence'].isna()]
+    if backward_sequences.shape[0] > 0:
+        backward_sequences = pd.concat([backward_sequences,forward_sequences.iloc[[0]]]).iloc[::-1]
+        forward_sequences = pd.concat([forward_sequences,backward_sequences])
+    
+    return forward_sequences.drop("forward_sequence", axis=1)
+    
+def track_sequence(sequence, sequence_img_root,model_pth,extension='.jpg'):
     torch.cuda.empty_cache()
-    out = track_sequence(model_pth,ds,annotation_label,min_confidence)
-    if len(out['bbox_list']) > 0:
-        ds = ds.iloc[out['init_frame'][0]:]
-        out_file = []
-        for frame, bbox in zip(ds.itertuples(index=False),out['bbox_list']):
-            x1,y1,x2,y2 = bbox
-            img_name = os.path.basename(frame[3])
-            ann_path = dataset.get_ann_path(img_name)
-            out_file.append([ann_path,x1,y1,x2,y2])
-            print
-        out_file = pd.DataFrame(out_file, columns=['ann_path','x_min','y_min','x_max','y_max'])
-        # seq_label,img_name,confidence,class
-        out_file['seq_label'] = out_file['ann_path'].apply(lambda x: x.split(os.sep)[-3])
-        out_file['img_name']  = out_file['ann_path'].apply(lambda x: x.split(os.sep)[-1].replace(".json",""))
-        out_file['class'] = 'person'
-        out_file['confidence'] = 1
-        out_file[['x_min','y_min','x_max','y_max']] = out_file[['x_min','y_min','x_max','y_max']].astype(float).round(2)
-        out_file = out_file[['seq_label','img_name','confidence','class','x_min','y_min','x_max','y_max']]
-        out_file.to_csv(output_path,index=False)
-        torch.cuda.empty_cache()
-def main(dataset_path, model_pth,annotation_label,output_path,min_confidence):
-    image_project = Tset_Supervisely(dataset_path)
-    image_project.load_anns(12)
-    output_name = os.path.basename(dataset_path)+"__"+annotation_label
-    output_path = os.path.join(output_path,output_name)
+    sequence.sort_values("img_name",ascending=True,inplace=True)
+    img_paths = pd.DataFrame(glob(os.path.join(sequence_img_root,f"*.{extension.replace('.','')}")), columns=['img_path'])
+    img_paths['img_name'] = img_paths['img_path'].apply(os.path.basename)
+    img_paths['seq_label'] = sequence_img_root.split(os.sep)[-2]
+    sequence = img_paths.merge(sequence,on=['seq_label','img_name'],how='left')
+    
+    sub_sequences = add_back_sequence(sequence)
+    out = _track_sequence(sub_sequences,model_pth)
+    out.drop('img_path',axis=1,inplace=True)
+    out.drop_duplicates(subset=['seq_label', 'img_name'], inplace=True)
+    out.sort_values('img_name',inplace=True)
+    return out
+def main(anchors_obj_path, model_pth,image_root,output_path,min_confidence,extension='.jpg'):
+    image_project = pd.read_csv(anchors_obj_path)
+    index = image_project.dropna().loc[image_project.dropna().confidence < min_confidence].index
+    image_project.drop(index, inplace=True)
+    output_name = os.path.basename(anchors_obj_path).replace(".csv","")+"__"+os.path.basename(model_pth).split(".")[0]
     os.makedirs(output_path,exist_ok=True)
+    output_path = os.path.join(output_path,output_name+".csv")
     args = []
-    for seq_label in image_project.samples.seq_label.unique():
-        dataset = image_project.project.datasets.get(seq_label)
-        ds = image_project.filter_by_seq(seq_label).samples
-        _output_path = os.path.join(output_path,f"{seq_label}.csv")
-        if not os.path.isfile(_output_path):
-            arg = [ds, dataset,model_pth,_output_path,annotation_label,min_confidence]
+    out = []
+    no_anchors = []
+    for seq_label in image_project.seq_label.unique():
+        sequence = image_project.loc[image_project.seq_label == seq_label]
+        sequence_img_root = os.path.join(image_root,seq_label,'img')
+        if sequence.dropna().shape[0] > 0:
+            arg = [sequence, sequence_img_root,model_pth,extension]
             args.append(arg)
-            # track_dataset(*arg)
+            # track_sequence(*arg)
+        else:
+            no_anchors.append(sequence)
     pool = mp.Pool(2)
-    pool.starmap(track_dataset,args)
+    out = pool.starmap(track_sequence,args)
     pool.close()
     pool.join()
-    
-    arquivos = sorted(glob(output_path+"/*.csv"))
-    
-    out = pd.concat([pd.read_csv(arquivo) for arquivo in arquivos], ignore_index=True)
-    out.to_csv(output_path+".csv",index=False)
+    out = pd.concat(out)
+    if len(no_anchors) > 0:
+        no_anchors =  pd.concat(no_anchors)
+        out = pd.concat([out, no_anchors])
+    out.to_csv(output_path,index=False)
     
 if __name__ == "__main__":
-    # image_dataset_path = "/run/media/eduardo/SSD/Unifall/dataset/T-set/projects/Tset_images"
-    image_dataset_path = "/run/media/eduardo/SSD/Unifall/dataset/LaSOT/lasot_person"
+    # anchors_obj_path = "tset/3_object_detection/ground_truth/lasot_person__0.01__ground_truth.csv"
+    anchors_obj_path = "tset/3_object_detection/ground_truth/Tset_images__ground_truth.csv"
+    # image_root = "/run/media/eduardo/SSD/Unifall/dataset/LaSOT/lasot_person"
+    image_root = "/run/media/eduardo/SSD/Unifall/dataset/T-set/projects/Tset_images"
+    
     model_path = "/run/media/eduardo/SSD/Unifall/modelos/TransT/transt.pth"
-    annotation_label = '0.01__ground_truth'
-    output_path = "output"
+    output_path = "tset/4_track/output"
+    
+    extension = 'jpeg'
     min_confidence = 0.98
-    main(image_dataset_path, model_path,annotation_label,output_path,min_confidence)
+    main(anchors_obj_path, model_path,image_root,output_path,min_confidence,extension)
