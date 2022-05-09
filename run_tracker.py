@@ -39,7 +39,7 @@ def _track_sequence(sequence,model_pth):
             x2 = x1+x2
             y2 = y1+y2
             _out = linha.copy()
-            _out['confidence'] = outputs['best_score'].max()
+            _out['confidence'] = np.nan
             _out['class'] = classe
             _out['x_min'], _out['y_min'], _out['x_max'], _out['y_max'] = x1,y1,x2,y2
             output.append(_out)
@@ -87,7 +87,8 @@ def main(anchors_obj_path, model_pth,image_root,output_path,min_confidence,exten
         if sequence.dropna().shape[0] > 0:
             arg = [sequence, sequence_img_root,model_pth,extension]
             args.append(arg)
-            # track_sequence(*arg)
+            track_sequence(*arg)
+            print
         else:
             no_anchors.append(sequence)
     pool = mp.Pool(2)
